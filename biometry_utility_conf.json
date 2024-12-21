@@ -1,4 +1,5 @@
 {
+  "source_biometry_folder": "/home/evstafev/Изображения/biorecord",
   "protocol": "http",
   "domain": "third-home",
   "logging": {

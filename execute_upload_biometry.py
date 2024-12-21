@@ -1,4 +1,7 @@
 """Main function for execute upload biometry"""
+from typing import List
+
+import aiofiles.os as aios
 import argparse
 import json
 import os
@@ -6,9 +9,26 @@ import logging
 import logging.config
 import sys
 
+from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC
+
 global config_data
 
 logger = logging.getLogger('biometry_utility')
+
+def _get_person_name_info(file_name: str):
+    person_name_list = file_name.split('_')
+
+    person_dict = {
+        M7_PEOPLE_NAME: None,
+        M7_PEOPLE_LAST_NAME: None,
+        M7_PEOPLE_PATRONYMIC: None
+    }
+
+async def _create_people_dict(files: List[str]):
+    for file_name in files:
+
+
+
 
 
 async def execute_upload_biometry():
@@ -17,8 +37,10 @@ async def execute_upload_biometry():
     try:
         print('execute_upload_biometry - into')
         config_data = get_config()
+        source_biometry_folder = config_data['source_biometry_folder']
         print('global ', config_data)
         _init_log()
+        sorted_files = await _get_files(source_biometry_folder)
 
         pass
     except Exception as ex:
@@ -28,6 +50,15 @@ def run_utility():
     global config_data
     print(config_data)
     pass
+
+def _file_sort(value: str):
+    return value.split('_')[0]
+
+async def _get_files(folder_path: str) -> List[str]:
+    files = sorted(await aios.listdir(folder_path), key=_file_sort)
+    print('files ', files)
+    return files
+
 
 def _init_log():
     global config_data
