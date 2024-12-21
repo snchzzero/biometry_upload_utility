@@ -15,17 +15,34 @@ global config_data
 
 logger = logging.getLogger('biometry_utility')
 
-def _get_person_name_info(file_name: str):
-    person_name_list = file_name.split('_')
-
+def _get_person_name_info(file_name: str) -> dict :
     person_dict = {
-        M7_PEOPLE_NAME: None,
         M7_PEOPLE_LAST_NAME: None,
+        M7_PEOPLE_NAME: None,
         M7_PEOPLE_PATRONYMIC: None
     }
 
+    person_full_name_list = file_name.split('_')
+    last_elem = person_full_name_list[-1].split('.')[:1]  # del '.jpeg', '. jpg'
+    person_full_name_list[-1] = last_elem[0]
+
+    for index, name_info in enumerate(person_full_name_list):
+        if index == 0:
+            person_dict[M7_PEOPLE_LAST_NAME] = name_info
+        if index == 1:
+            person_dict[M7_PEOPLE_NAME] = name_info
+        if index == 2:
+            person_dict[M7_PEOPLE_PATRONYMIC] = name_info
+
+    return person_dict
+
+
 async def _create_people_dict(files: List[str]):
+    people_data = []
+
     for file_name in files:
+        people_data.append(_get_person_name_info(file_name))
+    print('people_data ', people_data)
 
 
 
@@ -41,6 +58,7 @@ async def execute_upload_biometry():
         print('global ', config_data)
         _init_log()
         sorted_files = await _get_files(source_biometry_folder)
+        await _create_people_dict(sorted_files)
 
         pass
     except Exception as ex:
