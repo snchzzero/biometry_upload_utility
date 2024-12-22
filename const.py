@@ -11,3 +11,5 @@ M7_BIOMETRY_ID = 'biometry_id'
 M7_BIOMETRY_OWNER_ID = 'owner_id'
 M7_BIOMETRY_PROPERTIES = 'properties'
 M7_BIOMETRY_TYPE_ID = 'biometry_type_id'
+M7_BIOMETRY_FILES_FOLDER = 'files_folder'
+
