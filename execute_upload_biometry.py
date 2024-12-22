@@ -1,7 +1,6 @@
 """Main function for execute upload biometry"""
 from typing import List
 
-import aiofiles.os as aios
 import argparse
 import json
 import os
@@ -9,11 +8,55 @@ import logging
 import logging.config
 import sys
 
-from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC
+from aiohttp import ClientSession
+from multidict import MultiDict
+
+from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, SERVICES_URL
 
 global config_data
 
 logger = logging.getLogger('biometry_utility')
+
+def _update_urls():
+    global config_data
+    protocol = config_data['protocol']
+    domain = config_data['domain']
+
+    for service_name, url in SERVICES_URL.items():
+        SERVICES_URL[service_name] = url.format(protocol, domain)
+
+    print('SERVICES_URL ', SERVICES_URL)
+
+
+async def _get_token():
+    try:
+        headers = MultiDict({})
+        headers.setdefault("Content-Type", "application/json")
+
+        m7_accounts_url = SERVICES_URL['m7_accounts']
+        logger.debug('_get_token from url: %s: enter', m7_accounts_url)
+        async with ClientSession() as client:
+            response = await client.post(
+                url=m7_accounts_url,
+                headers=headers,
+                json={
+                    "method": "login",
+                    "jsonrpc": "2.0",
+                    "params": {
+                        "login": "algont",
+                        "password": "12345678"
+                    },
+                    "id": 0
+                }
+            )
+            resp_json_bytes = await response.content.read()
+            logger.debug('resp_json_bytes: %s', resp_json_bytes)
+            resp_decode = resp_json_bytes.decode()
+            logger.debug('resp_decode: %s', resp_decode)
+    except Exception as ex:
+        logger.exception('Error _get_token: %s', ex)
+
+
 
 def _get_person_name_info(file_name: str) -> dict :
     person_dict = {
@@ -57,8 +100,10 @@ async def execute_upload_biometry():
         source_biometry_folder = config_data['source_biometry_folder']
         print('global ', config_data)
         _init_log()
+        _update_urls()
         sorted_files = await _get_files(source_biometry_folder)
         await _create_people_dict(sorted_files)
+        await _get_token()
 
         pass
     except Exception as ex:
@@ -73,7 +118,7 @@ def _file_sort(value: str):
     return value.split('_')[0]
 
 async def _get_files(folder_path: str) -> List[str]:
-    files = sorted(await aios.listdir(folder_path), key=_file_sort)
+    files = sorted(os.listdir(folder_path), key=_file_sort)
     print('files ', files)
     return files
 
