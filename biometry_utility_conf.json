@@ -1,5 +1,11 @@
 {
-  "source_biometry_folder": "/home/evstafev/Изображения/biorecord",
+  "utility_settings":
+    {
+      "source_biometry_folder": "/home/evstafev/Изображения/biorecord",
+      "biometry_type_id": "95b312bf0be942b19d69fdcb7cdfd6c6",
+      "biometry_url": "{}://biometry.{}/jsonrpc/biometry/v1",
+      "biometry_upload_url": "{}://biometry.{}/upload"
+    },
   "logging": {
         "version": 1,
         "handlers": {

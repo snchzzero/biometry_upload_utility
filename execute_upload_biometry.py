@@ -10,7 +10,9 @@ import logging.config
 from aiohttp import ClientSession
 from multidict import MultiDict
 
-from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, M7_BIOMETRY_URL
+from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, \
+    M7_PEOPLE_ID, M7_BIOMETRY_OWNER_ID, M7_BIOMETRY_TYPE_ID, M7_BIOMETRY_ID, \
+    M7_BIOMETRY_PROPERTIES
 
 global config_data
 
@@ -39,9 +41,18 @@ class BiometryUploadBiometry:
         protocol = self.config['m7']['protocol']
         domain = self.config['m7']['root_domain']
 
-        biometry_url = M7_BIOMETRY_URL.format(protocol, domain)
+        biometry_url = self.config['utility_settings']['biometry_url'].format(protocol, domain)
         print('biometry_url ', biometry_url)
         return biometry_url
+
+    def _get_biometry_upload_url(self) -> str:
+        protocol = self.config['m7']['protocol']
+        domain = self.config['m7']['root_domain']
+
+        biometry_upload_url = self.config['utility_settings']['biometry_upload_url'].format(
+            protocol, domain)
+        print('biometry_upload_url ', biometry_upload_url)
+        return biometry_upload_url
 
     async def _get_token(self):
         try:
@@ -122,7 +133,6 @@ class BiometryUploadBiometry:
                                   headers: MultiDict,
                                   person_data: dict) -> List[dict]:
         try:
-            logger.exception('_add_m7_people: enter')
             initial_person_data = person_data['m7_people']
             last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
             first_name = initial_person_data.get(M7_PEOPLE_NAME)
@@ -149,10 +159,10 @@ class BiometryUploadBiometry:
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
                 person_id = resp_json['result']
-                logger.debug('Got result: %s', person_id)
+                logger.debug('Successfully add data, person_id: %s', person_id)
                 return person_id
         except Exception as ex:
-            logger.debug('Error _add_m7_people: %s', ex)
+            logger.exception('Error _add_m7_people: %s', ex)
 
 
     @staticmethod
@@ -160,7 +170,6 @@ class BiometryUploadBiometry:
                                                            headers: MultiDict,
                                                            person_data: dict) -> List[dict]:
         try:
-            logger.exception('_get_person_id_by_person_name_from_m7_people: enter')
             initial_person_data = person_data['m7_people']
             last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
             first_name = initial_person_data.get(M7_PEOPLE_NAME)
@@ -183,7 +192,7 @@ class BiometryUploadBiometry:
             method_params = {
                 'filter': filter_m7_people,
                 'order': [],
-                'limit': 100,
+                'limit': 1,
                 'offset': 0
             }
 
@@ -201,14 +210,13 @@ class BiometryUploadBiometry:
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
                 result = resp_json['result']
-                person_id = resp_json['result'].get('person_id')
                 logger.debug('Got result list: %s', result)
-                return person_id
+                if result:
+                    person_id = resp_json['result'][0].get('person_id')
+                    return person_id
         except Exception as ex:
             print('Error _get_person_id_by_person_name_from_m7_people: ', ex)
-            logger.debug('Error _get_person_id_by_person_name_from_m7_people: %s', ex)
-
-
+            logger.exception('Error _get_person_id_by_person_name_from_m7_people: %s', ex)
 
 
     async def _create_update_data_m7_people_service(self, people_data: dict):
@@ -234,36 +242,130 @@ class BiometryUploadBiometry:
             person_data['m7_people']['person_id'] = person_id
         print('-------------')
         print('AFTER people_data ', people_data)
-        return
+        return people_data
+
+
+    @staticmethod
+    async def _get_biometry_id_by_filter_from_m7_biometry(url: str,
+                                                          biometry_type_id: str,
+                                                          headers: MultiDict,
+                                                          person_data: dict) -> List[dict]:
+        try:
+            initial_person_data = person_data['m7_people']
+            owner_id = initial_person_data[M7_PEOPLE_ID]
+            filter_m7_biometry = {
+                M7_BIOMETRY_OWNER_ID: {
+                    'values': [owner_id]
+                },
+                M7_BIOMETRY_TYPE_ID: {
+                    'values': [biometry_type_id]
+                }
+            }
+
+
+            method_params = {
+                'filter': filter_m7_biometry,
+                'order': [],
+                'limit': 1,
+                'offset': 0
+            }
+
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=url,
+                    headers=headers,
+                    json={
+                        "method": "get_list_by_filter",
+                        "jsonrpc": "2.0",
+                        "params": method_params,
+                        "id": 0
+                    }
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+                result = resp_json['result']
+                logger.debug('Got result list: %s', result)
+                if result:
+                    owner_id = resp_json['result'][0].get(M7_BIOMETRY_ID)
+                    return owner_id
+        except Exception as ex:
+            print('Error _get_biometry_id_by_filter_from_m7_biometry: ', ex)
+            logger.exception('Error _get_biometry_id_by_filter_from_m7_biometry: %s', ex)
+
+
+    @staticmethod
+    async def _add_data_m7_biometry(url: str,
+                                    biometry_type_id: str,
+                                    person_full_name: str,
+                                    headers: MultiDict,
+                                    person_data: dict) -> List[dict]:
+        try:
+            initial_person_data = person_data['m7_people']
+            owner_id = initial_person_data[M7_PEOPLE_ID]
+
+            data = {
+                M7_BIOMETRY_OWNER_ID: owner_id,
+                M7_BIOMETRY_TYPE_ID: biometry_type_id,
+                M7_BIOMETRY_PROPERTIES: {}
+            }
+            method_params = {'data': data}
+
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=url,
+                    headers=headers,
+                    json={
+                        "method": "add",
+                        "jsonrpc": "2.0",
+                        "params": method_params,
+                        "id": 0
+                    }
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+                biometry_id = resp_json['result']
+                logger.debug('Successfully add data, biometry_id: %s', biometry_id)
+                return biometry_id
+        except Exception as ex:
+            logger.debug('Error _add_data_m7_biometry: %s', ex)
 
 
     async def _create_update_data_m7_biometry_service(self, people_data: dict):
         headers = self._get_header()
         m7_biometry_url = self._get_biometry_url()
+        biometry_type_id = self.config['utility_settings']['biometry_type_id']
+
         logger.debug('create_update_data m7_biometry by url: %s', m7_biometry_url)
 
         for person_full_name, person_data in people_data.items():
             print('person_data ', person_data)
-            logger.debug('Create_update person_data for: %s', person_full_name)
-            print('Create_update person_data for: ', person_full_name)
-            person_id = await self._get_person_id_by_person_name_from_m7_people(
+            logger.debug('Create_update biometry for: %s', person_full_name)
+            print('Create_update biometry for: ', person_full_name)
+            biometry_id = await self._get_biometry_id_by_filter_from_m7_biometry(
                 url=m7_biometry_url,
+                biometry_type_id=biometry_type_id,
                 headers=headers,
                 person_data=person_data
             )
-            if not person_id:
-                person_id = await self._add_data_m7_people(
+            if not biometry_id:
+                biometry_id = await self._add_data_m7_biometry(
                     url=m7_biometry_url,
+                    biometry_type_id=biometry_type_id,
+                    person_full_name=person_full_name,
                     headers=headers,
                     person_data=person_data
                 )
-            person_data['m7_people']['person_id'] = person_id
+            person_data['m7_people'][M7_BIOMETRY_ID] = biometry_id
         print('-------------')
         print('AFTER people_data ', people_data)
         return people_data
 
 
+    async def _upload_templates(self):
+        pass
 
+    async def _create_update_templates_m7_biometry_service(self, people_data):
+        pass
 
 
     async def execute_upload_biometry(self):
@@ -271,7 +373,7 @@ class BiometryUploadBiometry:
         try:
             print('execute_upload_biometry - into')
             self.config = self.get_config()
-            source_biometry_folder = self.config['source_biometry_folder']
+            source_biometry_folder = self.config['utility_settings']['source_biometry_folder']
             print('config ',  self.config)
             self._init_log()
             sorted_files = await self._get_files(source_biometry_folder)
@@ -279,8 +381,9 @@ class BiometryUploadBiometry:
             self.token = await self._get_token()
 
             people_data = await self._create_update_data_m7_people_service(people_data)
+            people_data = await self._create_update_data_m7_biometry_service(people_data)
+            await self._create_update_templates_m7_biometry_service(people_data)
 
-            pass
         except Exception as ex:
             print('Error execute_upload_biometry: ', ex)
 
