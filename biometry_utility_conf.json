@@ -35,6 +35,9 @@
     },
   "m7": {
     "protocol": "http",
-    "root_domain": "assadid-dev"
+    "root_domain": "assadid-dev",
+    "endpoints": {
+      "people": "http://assadid-dev/people/jsonrpc/people"
+    }
   }
 }

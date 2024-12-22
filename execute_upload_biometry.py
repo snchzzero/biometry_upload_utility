@@ -10,7 +10,7 @@ import logging.config
 from aiohttp import ClientSession
 from multidict import MultiDict
 
-from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, SERVICES_URL
+from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, M7_BIOMETRY_URL
 
 global config_data
 
@@ -23,20 +23,29 @@ class BiometryUploadBiometry:
         self.token = None
         self.config = None
 
+    @staticmethod
+    def _get_login_header() -> MultiDict:
+        headers = MultiDict({})
+        headers.setdefault("Content-Type", "application/json")
+        return headers
 
-    def _update_biometry_url(self):
+    def _get_header(self) -> MultiDict:
+        headers = MultiDict({})
+        headers.setdefault("X-M7-Authorization-Token", self.token)
+        return headers
+
+
+    def _get_biometry_url(self) -> str:
         protocol = self.config['m7']['protocol']
         domain = self.config['m7']['root_domain']
 
-        for service_name, url in SERVICES_URL.items():
-            SERVICES_URL[service_name] = url.format(protocol, domain)
-        print('SERVICES_URL ', SERVICES_URL)
+        biometry_url = M7_BIOMETRY_URL.format(protocol, domain)
+        print('biometry_url ', biometry_url)
+        return biometry_url
 
     async def _get_token(self):
         try:
-            headers = MultiDict({})
-            headers.setdefault("Content-Type", "application/json")
-
+            headers = self._get_login_header()
             m7_accounts_url = self.config['m7']['endpoints']['auth_v2']
             logger.debug('_get_token from url: %s: enter', m7_accounts_url)
             async with ClientSession() as client:
@@ -93,7 +102,7 @@ class BiometryUploadBiometry:
         }
 
 
-    async def _create_people_dict(self, files: List[str]) -> List[dict]:
+    async def _init_people_data(self, files: List[str]) -> dict:
         people_data = {}
 
         for file_name in files:
@@ -105,12 +114,155 @@ class BiometryUploadBiometry:
             else:
                 people_data[full_name] = m7_people
                 people_data[full_name]['files'] = [file_name]
+        return people_data
 
-        print('people_data ', people_data)
+
+    @staticmethod
+    async def _add_data_m7_people(url: str,
+                                  headers: MultiDict,
+                                  person_data: dict) -> List[dict]:
+        try:
+            logger.exception('_add_m7_people: enter')
+            initial_person_data = person_data['m7_people']
+            last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
+            first_name = initial_person_data.get(M7_PEOPLE_NAME)
+
+            person_dict = {
+                M7_PEOPLE_LAST_NAME: last_name
+            }
+            if first_name:
+                person_dict[M7_PEOPLE_NAME] = first_name
+            method_params = {'person': person_dict}
 
 
-    async def _create_m7_people(self):
-        pass
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=url,
+                    headers=headers,
+                    json={
+                        "method": "add",
+                        "jsonrpc": "2.0",
+                        "params": method_params,
+                        "id": 0
+                    }
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+                person_id = resp_json['result']
+                logger.debug('Got result: %s', person_id)
+                return person_id
+        except Exception as ex:
+            logger.debug('Error _add_m7_people: %s', ex)
+
+
+    @staticmethod
+    async def _get_person_id_by_person_name_from_m7_people(url: str,
+                                                           headers: MultiDict,
+                                                           person_data: dict) -> List[dict]:
+        try:
+            logger.exception('_get_person_id_by_person_name_from_m7_people: enter')
+            initial_person_data = person_data['m7_people']
+            last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
+            first_name = initial_person_data.get(M7_PEOPLE_NAME)
+            #patronymic = initial_person_data.get(M7_PEOPLE_PATRONYMIC)
+
+            filter_m7_people = {
+                M7_PEOPLE_LAST_NAME: {
+                    'values': [last_name]
+                }
+            }
+            if first_name:
+                filter_m7_people[M7_PEOPLE_NAME] = {
+                    'values': [first_name]
+                }
+            # if patronymic:
+            #     filter_m7_people[M7_PEOPLE_PATRONYMIC] = {
+            #         'values': [patronymic]
+            #     }
+
+            method_params = {
+                'filter': filter_m7_people,
+                'order': [],
+                'limit': 100,
+                'offset': 0
+            }
+
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=url,
+                    headers=headers,
+                    json={
+                        "method": "get_list_by_filter",
+                        "jsonrpc": "2.0",
+                        "params": method_params,
+                        "id": 0
+                    }
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+                result = resp_json['result']
+                person_id = resp_json['result'].get('person_id')
+                logger.debug('Got result list: %s', result)
+                return person_id
+        except Exception as ex:
+            print('Error _get_person_id_by_person_name_from_m7_people: ', ex)
+            logger.debug('Error _get_person_id_by_person_name_from_m7_people: %s', ex)
+
+
+
+
+    async def _create_update_data_m7_people_service(self, people_data: dict):
+        headers = self._get_header()
+        m7_people_url = self.config['m7']['endpoints']['people']
+        logger.debug('create_update_data m7_people by url: %s', m7_people_url)
+
+        for person_full_name, person_data in people_data.items():
+            print('person_data ', person_data)
+            logger.debug('Create_update person_data for: %s', person_full_name)
+            print('Create_update person_data for: ', person_full_name)
+            person_id = await self._get_person_id_by_person_name_from_m7_people(
+                url=m7_people_url,
+                headers=headers,
+                person_data=person_data
+            )
+            if not person_id:
+                person_id = await self._add_data_m7_people(
+                    url=m7_people_url,
+                    headers=headers,
+                    person_data=person_data
+                )
+            person_data['m7_people']['person_id'] = person_id
+        print('-------------')
+        print('AFTER people_data ', people_data)
+        return
+
+
+    async def _create_update_data_m7_biometry_service(self, people_data: dict):
+        headers = self._get_header()
+        m7_biometry_url = self._get_biometry_url()
+        logger.debug('create_update_data m7_biometry by url: %s', m7_biometry_url)
+
+        for person_full_name, person_data in people_data.items():
+            print('person_data ', person_data)
+            logger.debug('Create_update person_data for: %s', person_full_name)
+            print('Create_update person_data for: ', person_full_name)
+            person_id = await self._get_person_id_by_person_name_from_m7_people(
+                url=m7_biometry_url,
+                headers=headers,
+                person_data=person_data
+            )
+            if not person_id:
+                person_id = await self._add_data_m7_people(
+                    url=m7_biometry_url,
+                    headers=headers,
+                    person_data=person_data
+                )
+            person_data['m7_people']['person_id'] = person_id
+        print('-------------')
+        print('AFTER people_data ', people_data)
+        return people_data
+
+
 
 
 
@@ -122,10 +274,11 @@ class BiometryUploadBiometry:
             source_biometry_folder = self.config['source_biometry_folder']
             print('config ',  self.config)
             self._init_log()
-            self._update_biometry_url()
             sorted_files = await self._get_files(source_biometry_folder)
-            await self._create_people_dict(sorted_files)
+            people_data = await self._init_people_data(sorted_files)
             self.token = await self._get_token()
+
+            people_data = await self._create_update_data_m7_people_service(people_data)
 
             pass
         except Exception as ex:
