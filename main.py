@@ -1,11 +1,10 @@
 import asyncio
-from execute_upload_biometry import execute_upload_biometry
-
+from execute_upload_biometry import BiometryUploadBiometry
 
 if __name__ == '__main__':
     try:
         print('hello')
-
-        asyncio.run(execute_upload_biometry())
+        utility = BiometryUploadBiometry()
+        asyncio.run(utility.execute_upload_biometry())
     except:
         pass
