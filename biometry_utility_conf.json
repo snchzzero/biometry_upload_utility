@@ -1,7 +1,5 @@
 {
   "source_biometry_folder": "/home/evstafev/Изображения/biorecord",
-  "protocol": "http",
-  "domain": "third-home",
   "logging": {
         "version": 1,
         "handlers": {
@@ -34,5 +32,9 @@
             "level": "ERROR",
             "handlers": ["console"]
         }
-    }
+    },
+  "m7": {
+    "protocol": "http",
+    "root_domain": "assadid-dev"
+  }
 }
