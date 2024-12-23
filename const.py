@@ -14,3 +14,5 @@ M7_BIOMETRY_TYPE_ID = 'biometry_type_id'
 M7_BIOMETRY_FILES_FOLDER = 'files_folder'
 
 BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK = '95b312bf0be942b19d69fdcb7cdfd6c6'
+
+ENDPOINT_M7_BIOMETRY =  'm7:biometry'

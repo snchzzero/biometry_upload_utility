@@ -9,32 +9,62 @@ import logging
 import logging.config
 
 from aiohttp import ClientSession, FormData
-from multidict import MultiDict
+from m7_aiohttp.auth.service_token import AioHttpServiceToken
+from m7_aiohttp.services.endpoints import AioHttpEndpointsPort
+from multidict._multidict import MultiDict
 
 from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, \
     M7_PEOPLE_ID, M7_BIOMETRY_OWNER_ID, M7_BIOMETRY_TYPE_ID, M7_BIOMETRY_ID, \
     M7_BIOMETRY_PROPERTIES, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK
+from endpoint_service import EndpointServices
+from init_utility import get_config, init_log
 from utility_exceptions import NotFound, UtilityError
 
 logger = logging.getLogger('biometry_utility')
 
 
+
 class BiometryUploadBiometry:
 
     def __init__(self):
-        self.token = None
-        self.config = None
+        self._init_others_service()
 
-    @staticmethod
-    def _get_login_header() -> MultiDict:
-        headers = MultiDict({})
-        headers.setdefault("Content-Type", "application/json")
-        return headers
 
-    def _get_header(self) -> MultiDict:
-        headers = MultiDict({})
-        headers.setdefault("X-M7-Authorization-Token", self.token)
-        return headers
+
+    def _init_others_service(self):
+        try:
+            self.config = get_config()
+            init_log(self.config)
+            print("self.config['m7']['endpoints']['auth_v2'] ", self.config['m7']['endpoints']['auth_v2'])
+            print("self.config['m7']['credentials_file'] ", self.config['m7']['credentials_file'])
+
+            service_token = AioHttpServiceToken(
+                self.config['m7']['endpoints']['auth_v2'],
+                self.config['m7']['credentials_file']
+            )
+
+            self.service_token = service_token
+            logger.debug('self.service_token: %s', self.service_token)
+
+            endpoints_port = AioHttpEndpointsPort(
+                endpoints_service_url=self.config['m7']['endpoints']['endpoints'],
+                service_token=self.service_token
+            )
+            self.endpoints_port = endpoints_port
+            logger.debug('self.endpoints_port: %s', self.endpoints_port)
+
+
+
+            endpoint_service = EndpointServices(
+                service_token=self.service_token,
+                endpoints_port=self.endpoints_port
+            )
+            self.endpoint_service = endpoint_service
+            logger.debug('self.endpoint_service: %s', self.endpoint_service)
+
+        except Exception as ex:
+            print('Error: _init_others_service: %s', ex)
+            logger.exception('Error: _init_others_service: %s', ex)
 
     @staticmethod
     def _get_sdk_type_by_biometry_type_id(biometry_type_id: str) -> str:
@@ -42,14 +72,6 @@ class BiometryUploadBiometry:
             BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK: 'lunasdk'
         }
         return sdk_type_dict[biometry_type_id]
-
-    def _get_biometry_url(self) -> str:
-        protocol = self.config['m7']['protocol']
-        domain = self.config['m7']['root_domain']
-
-        biometry_url = self.config['utility_settings']['biometry_url'].format(protocol, domain)
-        print('biometry_url ', biometry_url)
-        return biometry_url
 
     def _get_biometry_upload_url(self) -> str:
         protocol = self.config['m7']['protocol']
@@ -68,37 +90,6 @@ class BiometryUploadBiometry:
             protocol, domain)
         print('stations_client_url ', stations_client_url)
         return stations_client_url
-
-    async def _get_token(self):
-        try:
-            headers = self._get_login_header()
-            m7_accounts_url = self.config['m7']['endpoints']['auth_v2']
-            logger.debug('_get_token from url: %s: enter', m7_accounts_url)
-            async with ClientSession() as client:
-                response = await client.post(
-                    url=m7_accounts_url,
-                    headers=headers,
-                    json={
-                        "method": "login",
-                        "jsonrpc": "2.0",
-                        "params": {
-                            "login": "algont",
-                            "password": "12345678"
-                        },
-                        "id": 0
-                    }
-                )
-                resp_json_bytes = await response.content.read()
-                resp_json = json.loads(resp_json_bytes.decode())
-
-                if not resp_json.get('result'):
-                    raise UtilityError('Error _get_token: %s', resp_json)
-
-                token = resp_json['result']['access_token']
-                logger.debug('Got access_token: %s', token)
-                return token
-        except Exception as ex:
-            logger.debug('Error _get_token: %s', ex)
 
 
     @staticmethod
@@ -189,15 +180,16 @@ class BiometryUploadBiometry:
             raise
 
 
-    @staticmethod
-    async def _get_person_id_by_person_name_from_m7_people(url: str,
-                                                           headers: MultiDict,
-                                                           person_data: dict) -> List[dict]:
-        try:
+    async def _create_update_data_m7_people_service(self, people_data: dict):
+        m7_people_url = self.config['m7']['endpoints']['people']
+        logger.debug('create_update_data m7_people by url: %s', m7_people_url)
+
+        for person_full_name, person_data in people_data.items():
+            logger.debug('Process for for: %s', person_full_name)
+
             initial_person_data = person_data['m7_people']
             last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
             first_name = initial_person_data.get(M7_PEOPLE_NAME)
-            #patronymic = initial_person_data.get(M7_PEOPLE_PATRONYMIC)
 
             filter_m7_people = {
                 M7_PEOPLE_LAST_NAME: {
@@ -208,64 +200,17 @@ class BiometryUploadBiometry:
                 filter_m7_people[M7_PEOPLE_NAME] = {
                     'values': [first_name]
                 }
-            # if patronymic:
-            #     filter_m7_people[M7_PEOPLE_PATRONYMIC] = {
-            #         'values': [patronymic]
-            #     }
-
-            method_params = {
-                'filter': filter_m7_people,
-                'order': [],
-                'limit': 1,
-                'offset': 0
-            }
-
-            async with ClientSession() as client:
-                response = await client.post(
-                    url=url,
-                    headers=headers,
-                    json={
-                        "method": "get_list_by_filter",
-                        "jsonrpc": "2.0",
-                        "params": method_params,
-                        "id": 0
-                    }
-                )
-                resp_json_bytes = await response.content.read()
-                resp_json = json.loads(resp_json_bytes.decode())
-
-                if not resp_json.get('result'):
-                    raise UtilityError('Error m7_people service: %s', resp_json)
-
-                result = resp_json['result']
-                person_id = result[0].get('person_id')
-                logger.debug('already exist in m7_people, person_id: %s', person_id)
-                return person_id
-        except Exception as ex:
-            print('Error _get_person_id_by_person_name_from_m7_people: ', ex)
-            logger.exception('Error _get_person_id_by_person_name_from_m7_people: %s', ex)
-            raise
 
 
-    async def _create_update_data_m7_people_service(self, people_data: dict):
-        headers = self._get_header()
-        m7_people_url = self.config['m7']['endpoints']['people']
-        logger.debug('create_update_data m7_people by url: %s', m7_people_url)
+            m7_people_list = await self.endpoint_service.get_list_by_filter_from_url(
+                m7_people_url, filter_m7_people)
 
-        for person_full_name, person_data in people_data.items():
-            logger.debug('Process for for: %s', person_full_name)
-            person_id = await self._get_person_id_by_person_name_from_m7_people(
-                url=m7_people_url,
-                headers=headers,
-                person_data=person_data
-            )
-            if not person_id:
-                person_id = await self._add_data_m7_people(
-                    url=m7_people_url,
-                    headers=headers,
-                    person_data=person_data
-                )
-            person_data['m7_people']['person_id'] = person_id
+            if m7_people_list:
+                person_data['m7_people']['person_id'] = m7_people_list[0].get(M7_PEOPLE_ID)
+            else:
+                person_id = await self.endpoint_service.add_data_m7_people(m7_people_url, person_data)
+                person_data['m7_people']['person_id'] = person_id
+                logger.debug('For %s got person_id: %s', person_full_name, person_id)
         return people_data
 
 
@@ -364,7 +309,6 @@ class BiometryUploadBiometry:
 
 
     async def _create_update_data_m7_biometry_service(self, people_data: dict):
-        headers = self._get_header()
         m7_biometry_url = self._get_biometry_url()
         biometry_type_id = self.config['utility_settings']['biometry_type_id']
 
@@ -375,7 +319,7 @@ class BiometryUploadBiometry:
             biometry_id = await self._get_biometry_id_by_filter_from_m7_biometry(
                 url=m7_biometry_url,
                 biometry_type_id=biometry_type_id,
-                headers=headers,
+                #headers=headers,
                 person_data=person_data
             )
             if not biometry_id:
@@ -383,7 +327,7 @@ class BiometryUploadBiometry:
                     url=m7_biometry_url,
                     biometry_type_id=biometry_type_id,
                     person_full_name=person_full_name,
-                    headers=headers,
+                    #headers=headers,
                     person_data=person_data
                 )
 
@@ -412,7 +356,6 @@ class BiometryUploadBiometry:
 
     async def _get_template_by_image(self, image_base64: base64):
         try:
-            headers = self._get_login_header()
             stations_client_url = self._get_stations_client_url()
             biometry_type_id = self.config['utility_settings']['biometry_type_id']
             sdk_type = self._get_sdk_type_by_biometry_type_id(biometry_type_id)
@@ -431,7 +374,7 @@ class BiometryUploadBiometry:
             async with ClientSession() as client:
                 response = await client.post(
                     url=stations_client_url,
-                    headers=headers,
+                    #headers=headers,
                     json={
                         "method": "get_template_by_image",
                         "jsonrpc": "2.0",
@@ -456,13 +399,12 @@ class BiometryUploadBiometry:
 
     async def _upload_m7_biometry_service(self, form_data: FormData) -> str:
         try:
-            headers = self._get_header()
             biometry_upload_url = self._get_biometry_upload_url()
 
             async with ClientSession() as client:
                 response = await client.post(
                     url=biometry_upload_url,
-                    headers=headers,
+                    #headers=headers,
                     data=form_data
                 )
                 resp_json_bytes = await response.content.read()
@@ -562,22 +504,25 @@ class BiometryUploadBiometry:
     async def execute_upload_biometry(self):
 
         try:
+            await self.service_token.start()
             print('execute_upload_biometry - into')
-            self.config = self.get_config()
             source_biometry_folder = self.config['utility_settings']['source_biometry_folder']
-            self._init_log()
             sorted_files = await self._get_files(source_biometry_folder)
             people_data = await self._init_people_data(sorted_files)
-            self.token = await self._get_token()
+            #self.token = await self._get_token()
 
             people_data = await self._create_update_data_m7_people_service(people_data)
             people_data = await self._create_update_data_m7_biometry_service(people_data)
-            await self._create_update_templates_m7_biometry_service(
-                source_biometry_folder,
-                people_data)
+            # await self._create_update_templates_m7_biometry_service(
+            #     source_biometry_folder,
+            #     people_data)
         except Exception as ex:
             print('Error execute_upload_biometry: ', ex)
             logger.exception('Error execute_upload_biometry: %s', ex)
+
+
+    async def stop_services(self):
+        await self.service_token.stop()
 
 
     @staticmethod
@@ -587,47 +532,3 @@ class BiometryUploadBiometry:
     async def _get_files(self, folder_path: str) -> List[str]:
         files = sorted(os.listdir(folder_path), key=self._file_sort)
         return files
-
-
-    def _init_log(self):
-
-        conf_logging = self.config['logging']
-        log_path = conf_logging['handlers']['file']['filename']
-
-        log_dir = os.path.dirname(log_path)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        logging.config.dictConfig(conf_logging)
-        logger.debug('Successfully log init')
-
-
-    @staticmethod
-    def get_config():
-        try:
-            parser = argparse.ArgumentParser()
-            parser.add_argument(
-                '--config',
-                help='M7 configuration file name',
-                type=str,
-                default='biometry_utility_conf.json')
-            parser.add_argument(
-                '--m7_config',
-                help='M7 configuration file name',
-                type=str,
-                default='/etc/m7/m7.json')
-            args, _ = parser.parse_known_args()
-
-            with open(args.config) as f:
-                config = json.load(f)
-            try:
-                with open(args.m7_config) as f:
-                    m7_config = json.load(f)
-                if m7_config:
-                    config.update(m7_config)
-            except Exception as ex:
-                print("Can't get file '/etc/m7/m7.json': ", ex)
-
-            return config
-        except Exception as ex:
-            print('Error get_config ', ex)
