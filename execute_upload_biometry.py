@@ -1,4 +1,5 @@
 """Main function for execute upload biometry"""
+import base64
 from typing import List
 
 import argparse
@@ -12,7 +13,7 @@ from multidict import MultiDict
 
 from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, \
     M7_PEOPLE_ID, M7_BIOMETRY_OWNER_ID, M7_BIOMETRY_TYPE_ID, M7_BIOMETRY_ID, \
-    M7_BIOMETRY_PROPERTIES, M7_BIOMETRY_FILES_FOLDER
+    M7_BIOMETRY_PROPERTIES, M7_BIOMETRY_FILES_FOLDER, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK
 
 global config_data
 
@@ -36,6 +37,12 @@ class BiometryUploadBiometry:
         headers.setdefault("X-M7-Authorization-Token", self.token)
         return headers
 
+    @staticmethod
+    def _get_sdk_type_by_biometry_type_id(biometry_type_id: str) -> str:
+        sdk_type_dict = {
+            BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK: 'lunasdk'
+        }
+        return sdk_type_dict[biometry_type_id]
 
     def _get_biometry_url(self) -> str:
         protocol = self.config['m7']['protocol']
@@ -53,6 +60,15 @@ class BiometryUploadBiometry:
             protocol, domain)
         print('biometry_upload_url ', biometry_upload_url)
         return biometry_upload_url
+
+    def _get_stations_client_url(self) -> str:
+        protocol = self.config['m7']['protocol']
+        domain = self.config['m7']['root_domain']
+
+        stations_client_url = self.config['utility_settings']['stations_client_url'].format(
+            protocol, domain)
+        print('stations_client_url ', stations_client_url)
+        return stations_client_url
 
     async def _get_token(self):
         try:
@@ -389,6 +405,42 @@ class BiometryUploadBiometry:
             print('Error load_file_image: ', ex)
             return None
 
+    async def _get_template_by_image(self, image_bytes: bytes):
+        try:
+            headers = self._get_login_header()
+            stations_client_url = self._get_stations_client_url()
+            biometry_type_id = self.config['utility_settings']['biometry_type_id']
+            sdk_type = self._get_sdk_type_by_biometry_type_id(biometry_type_id)
+
+            method_params = {
+                'sdk_type': sdk_type,
+                'image_buffer': {
+                    'imageBuffer': {
+                        'imageBuffer': base64.b64decode(image_bytes)
+                    }
+                }
+            }
+
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=stations_client_url,
+                    headers=headers,
+                    json={
+                        "method": "get_template_by_image",
+                        "jsonrpc": "2.0",
+                        "params": method_params,
+                        "id": 0
+                    }
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+                result = resp_json['result']
+                logger.debug('Successfully get_template_by_image: %s', result)
+        except Exception as ex:
+            logger.debug('Error get_template_by_image: %s', ex)
+
+
+
 
     async def _upload_template(self,
                                person_data: dict,
@@ -396,8 +448,10 @@ class BiometryUploadBiometry:
                                source_biometry_folder: str):
         full_path = '{}/{}'.format(source_biometry_folder, biometry_file_name)
         image_bytes = self._load_file_image(full_path)
-        form_data = FormData()
-        form_data.add_field('file', image_bytes, filename=biometry_file_name, content_type='plain/text')
+        image_template = self._get_template_by_image(image_bytes)
+
+        #form_data = FormData()
+        #form_data.add_field('file', image_bytes, filename=biometry_file_name, content_type='plain/text')
 
     async def _create_update_templates_m7_biometry_service(self,
                                                            source_biometry_folder: str,
