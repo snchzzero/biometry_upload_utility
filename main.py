@@ -6,5 +6,6 @@ if __name__ == '__main__':
         print('hello')
         utility = BiometryUploadBiometry()
         asyncio.run(utility.execute_upload_biometry())
-    except:
-        pass
+        print('main - done')
+    except Exception as ex:
+        print('Close main error: ', ex)

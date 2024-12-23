@@ -13,9 +13,8 @@ from multidict import MultiDict
 
 from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, \
     M7_PEOPLE_ID, M7_BIOMETRY_OWNER_ID, M7_BIOMETRY_TYPE_ID, M7_BIOMETRY_ID, \
-    M7_BIOMETRY_PROPERTIES, M7_BIOMETRY_FILES_FOLDER, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK
-
-global config_data
+    M7_BIOMETRY_PROPERTIES, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK
+from utility_exceptions import NotFound, UtilityError
 
 logger = logging.getLogger('biometry_utility')
 
@@ -91,6 +90,10 @@ class BiometryUploadBiometry:
                 )
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
+
+                if not resp_json.get('result'):
+                    raise UtilityError('Error _get_token: %s', resp_json)
+
                 token = resp_json['result']['access_token']
                 logger.debug('Got access_token: %s', token)
                 return token
@@ -174,11 +177,16 @@ class BiometryUploadBiometry:
                 )
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
+
+                if not resp_json.get('result'):
+                    raise UtilityError('Error m7_people service: %s', resp_json)
+
                 person_id = resp_json['result']
-                logger.debug('Successfully add data, person_id: %s', person_id)
+                logger.debug('%s successfully added to m7_people, person_id %s', person_id)
                 return person_id
         except Exception as ex:
             logger.exception('Error _add_m7_people: %s', ex)
+            raise
 
 
     @staticmethod
@@ -225,14 +233,18 @@ class BiometryUploadBiometry:
                 )
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
+
+                if not resp_json.get('result'):
+                    raise UtilityError('Error m7_people service: %s', resp_json)
+
                 result = resp_json['result']
-                logger.debug('Got result list: %s', result)
-                if result:
-                    person_id = resp_json['result'][0].get('person_id')
-                    return person_id
+                person_id = result[0].get('person_id')
+                logger.debug('already exist in m7_people, person_id: %s', person_id)
+                return person_id
         except Exception as ex:
             print('Error _get_person_id_by_person_name_from_m7_people: ', ex)
             logger.exception('Error _get_person_id_by_person_name_from_m7_people: %s', ex)
+            raise
 
 
     async def _create_update_data_m7_people_service(self, people_data: dict):
@@ -241,9 +253,7 @@ class BiometryUploadBiometry:
         logger.debug('create_update_data m7_people by url: %s', m7_people_url)
 
         for person_full_name, person_data in people_data.items():
-            print('person_data ', person_data)
-            logger.debug('Create_update person_data for: %s', person_full_name)
-            print('Create_update person_data for: ', person_full_name)
+            logger.debug('Process for for: %s', person_full_name)
             person_id = await self._get_person_id_by_person_name_from_m7_people(
                 url=m7_people_url,
                 headers=headers,
@@ -256,8 +266,6 @@ class BiometryUploadBiometry:
                     person_data=person_data
                 )
             person_data['m7_people']['person_id'] = person_id
-        print('-------------')
-        print('AFTER people_data ', people_data)
         return people_data
 
 
@@ -268,6 +276,7 @@ class BiometryUploadBiometry:
                                                           person_data: dict) -> List[dict]:
         try:
             initial_person_data = person_data['m7_people']
+            last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
             owner_id = initial_person_data[M7_PEOPLE_ID]
             filter_m7_biometry = {
                 M7_BIOMETRY_OWNER_ID: {
@@ -299,12 +308,17 @@ class BiometryUploadBiometry:
                 )
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
-                result = resp_json['result']
-                logger.debug('Got result list: %s', result)
-                return result
+
+                if not resp_json.get('result'):
+                    raise UtilityError('Error m7_biometry service: ', resp_json)
+
+                biometry_id = resp_json['result'][0].get(M7_BIOMETRY_ID)
+                logger.debug('%s already exist in m7_biometry, biometry_id: %s', biometry_id)
+                return biometry_id
         except Exception as ex:
             print('Error _get_biometry_id_by_filter_from_m7_biometry: ', ex)
             logger.exception('Error _get_biometry_id_by_filter_from_m7_biometry: %s', ex)
+            raise
 
 
     @staticmethod
@@ -337,11 +351,16 @@ class BiometryUploadBiometry:
                 )
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
+
+                if not resp_json.get('result'):
+                    raise UtilityError('Error m7_biometry service: %s', resp_json)
+
                 biometry_id = resp_json['result']
-                logger.debug('Successfully add data, biometry_id: %s', biometry_id)
+                logger.debug('successfully added to m7_biometry, biometry_id: %s', biometry_id)
                 return biometry_id
         except Exception as ex:
-            logger.debug('Error _add_data_m7_biometry: %s', ex)
+            logger.exception('Error _add_data_m7_biometry: %s', ex)
+            raise
 
 
     async def _create_update_data_m7_biometry_service(self, people_data: dict):
@@ -352,20 +371,14 @@ class BiometryUploadBiometry:
         logger.debug('create_update_data m7_biometry by url: %s', m7_biometry_url)
 
         for person_full_name, person_data in people_data.items():
-            print('person_data ', person_data)
             logger.debug('Create_update biometry for: %s', person_full_name)
-            print('Create_update biometry for: ', person_full_name)
-            result = await self._get_biometry_id_by_filter_from_m7_biometry(
+            biometry_id = await self._get_biometry_id_by_filter_from_m7_biometry(
                 url=m7_biometry_url,
                 biometry_type_id=biometry_type_id,
                 headers=headers,
                 person_data=person_data
             )
-            if result:
-                biometry_id = result[0].get(M7_BIOMETRY_ID)
-                file_folder = result[0].get(M7_BIOMETRY_FILES_FOLDER)
-
-            else:
+            if not biometry_id:
                 biometry_id = await self._add_data_m7_biometry(
                     url=m7_biometry_url,
                     biometry_type_id=biometry_type_id,
@@ -373,50 +386,44 @@ class BiometryUploadBiometry:
                     headers=headers,
                     person_data=person_data
                 )
-                result = await self._get_biometry_id_by_filter_from_m7_biometry(
-                    url=m7_biometry_url,
-                    biometry_type_id=biometry_type_id,
-                    headers=headers,
-                    person_data=person_data
-                )
-                file_folder = result[0].get(M7_BIOMETRY_FILES_FOLDER)
 
             person_data['m7_people'][M7_BIOMETRY_ID] = biometry_id
-            person_data['m7_people'][M7_BIOMETRY_FILES_FOLDER] = file_folder
-
-        print('-------------')
-        print('AFTER people_data ', people_data)
         return people_data
 
 
     @staticmethod
-    def _load_file_image(biometry_file_name: str):
+    def _load_file_image(path_file_image: str) -> base64:
         try:
             file_bytes = bytearray()
-            with open(biometry_file_name, 'rb') as file:
+            with open(path_file_image, 'rb') as file:
                 while True:
                     chunk = file.read(1024)
                     if not chunk:
                         break
                     file_bytes.extend(chunk)
-            return bytes(file_bytes)
+            logger.debug('Successfully loaded file img: %s', path_file_image)
+            image_base64 = base64.b64encode(bytes(file_bytes)).decode('utf-8')
+            return image_base64
         except IOError as ex:
             logger.exception('Error load_file_image: ', ex)
             print('Error load_file_image: ', ex)
             return None
 
-    async def _get_template_by_image(self, image_bytes: bytes):
+
+    async def _get_template_by_image(self, image_base64: base64):
         try:
             headers = self._get_login_header()
             stations_client_url = self._get_stations_client_url()
             biometry_type_id = self.config['utility_settings']['biometry_type_id']
             sdk_type = self._get_sdk_type_by_biometry_type_id(biometry_type_id)
+            logger.debug('Try to get template by sdk: %s, by url: %s', sdk_type, stations_client_url)
+            #image_base64 = base64.b64encode(image_base64).decode('utf-8')
 
             method_params = {
                 'sdk_type': sdk_type,
                 'image_buffer': {
                     'imageBuffer': {
-                        'imageBuffer': base64.b64decode(image_bytes)
+                        'imageBuffer': image_base64
                     }
                 }
             }
@@ -434,10 +441,39 @@ class BiometryUploadBiometry:
                 )
                 resp_json_bytes = await response.content.read()
                 resp_json = json.loads(resp_json_bytes.decode())
-                result = resp_json['result']
-                logger.debug('Successfully get_template_by_image: %s', result)
+
+                if not resp_json.get('result'):
+                    raise UtilityError('Error "get_template_by_image": %s',  resp_json)
+
+                logger.debug('Successfully get_template_by_image')
+
+
+                return resp_json['result']
         except Exception as ex:
-            logger.debug('Error get_template_by_image: %s', ex)
+            logger.exception('Error get_template_by_image: %s', ex)
+            raise
+
+
+    async def _upload_m7_biometry_service(self, form_data: FormData) -> str:
+        try:
+            headers = self._get_header()
+            biometry_upload_url = self._get_biometry_upload_url()
+
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=biometry_upload_url,
+                    headers=headers,
+                    data=form_data
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+                if not resp_json.get('template_id'):
+                    raise UtilityError('Error upload m7_biometry')
+                logger.debug('Successfully upload_m7_biometry_service: %s', resp_json)
+                return resp_json.get('template_id')
+        except Exception as ex:
+            logger.exception('Error upload_m7_biometry_service: %s', ex)
+            raise
 
 
 
@@ -446,28 +482,79 @@ class BiometryUploadBiometry:
                                person_data: dict,
                                biometry_file_name: str,
                                source_biometry_folder: str):
-        full_path = '{}/{}'.format(source_biometry_folder, biometry_file_name)
-        image_bytes = self._load_file_image(full_path)
-        image_template = self._get_template_by_image(image_bytes)
+        try:
+            full_path = '{}/{}'.format(source_biometry_folder, biometry_file_name)
+            person_id =  person_data['m7_people'][M7_PEOPLE_ID]
+            biometry_id = person_data['m7_people'][M7_BIOMETRY_ID]
 
-        #form_data = FormData()
-        #form_data.add_field('file', image_bytes, filename=biometry_file_name, content_type='plain/text')
+            image_base64 = self._load_file_image(full_path)
+            image_template = await self._get_template_by_image(image_base64)
+
+            face_quality = image_template['faceQuality']
+            hash_template = image_template['hash']
+            quality = image_template['quality']
+            hash_type = image_template['hashType']
+
+            template_properties = {
+                'biometry_id': biometry_id,
+                'attributes': {
+                    'template_file_kind': 'template',
+                    'id_photo_type': 'user',
+                    'hashType': hash_type,
+                    'quality': quality,
+                    'faceQuality': face_quality
+                }
+            }
+
+            form_data_template = FormData()
+            form_data_template.add_field(
+                'template_file',
+                hash_template,
+                #filename=biometry_file_name,
+                content_type='plain/text'
+            )
+            form_data_template.add_field('template_upload_properties', json.dumps(template_properties))
+            template_id = await self._upload_m7_biometry_service(form_data_template)
+
+            image_properties = {
+                'biometry_id': biometry_id,
+                'attributes': {
+                    'template_file_kind': 'image',
+                    'id_photo_type': 'user',
+                    'template_file_id': template_id
+                }
+            }
+
+            form_data_image = FormData()
+            form_data_image.add_field(
+                'image_file',
+                image_base64,
+                #filename=biometry_file_name,
+                content_type='image/jpeg'
+            )
+            form_data_template.add_field('image_upload_properties', json.dumps(image_properties))
+            await self._upload_m7_biometry_service(form_data_template)
+            logger.debug('Successfully upload files template and img')
+
+        except Exception as ex:
+            logger.exception('Error _upload_template: %s', ex)
+            raise
+
+
 
     async def _create_update_templates_m7_biometry_service(self,
                                                            source_biometry_folder: str,
                                                            people_data: dict):
-        headers = self._get_header()
-        m7_biometry_upload_url = self._get_biometry_url()
 
-        logger.debug('create_update_templates m7_biometry by url: %s', m7_biometry_upload_url)
         for person_full_name, person_data in people_data.items():
-            print('person_data ', person_data)
-            logger.debug('Create_update biometry templates for: %s', person_full_name)
-            print('Create_update biometry templates for: ', person_full_name)
+            try:
+                logger.debug('Create_update biometry templates for: %s', person_full_name)
 
-            biometry_files = person_data['files']
-            for biometry_file_name in biometry_files:
-                await self._upload_template(person_data, biometry_file_name, source_biometry_folder)
+                biometry_files = person_data['files']
+                for biometry_file_name in biometry_files:
+                    await self._upload_template(person_data, biometry_file_name, source_biometry_folder)
+            except Exception as ex:
+                logger.exception('Error create/update template for: %s: %s', person_full_name, ex)
 
 
 
@@ -478,7 +565,6 @@ class BiometryUploadBiometry:
             print('execute_upload_biometry - into')
             self.config = self.get_config()
             source_biometry_folder = self.config['utility_settings']['source_biometry_folder']
-            print('config ',  self.config)
             self._init_log()
             sorted_files = await self._get_files(source_biometry_folder)
             people_data = await self._init_people_data(sorted_files)
@@ -489,9 +575,9 @@ class BiometryUploadBiometry:
             await self._create_update_templates_m7_biometry_service(
                 source_biometry_folder,
                 people_data)
-
         except Exception as ex:
             print('Error execute_upload_biometry: ', ex)
+            logger.exception('Error execute_upload_biometry: %s', ex)
 
 
     @staticmethod
@@ -500,7 +586,6 @@ class BiometryUploadBiometry:
 
     async def _get_files(self, folder_path: str) -> List[str]:
         files = sorted(os.listdir(folder_path), key=self._file_sort)
-        print('files ', files)
         return files
 
 
