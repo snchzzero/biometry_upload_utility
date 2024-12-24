@@ -5,12 +5,12 @@ from typing import List
 
 from aiohttp import ClientSession, FormData
 from m7_aiohttp.auth.service_token import AioHttpServiceToken
-from m7_aiohttp.exceptions import NotFound
+from m7_aiohttp.exceptions import NotFound, AlreadyExists
 from m7_aiohttp.services.endpoints import AioHttpEndpointsPort
 
 from const import ENDPOINT_ID_STATIONS_CLIENT, ENDPOINT_M7_PROFILE_ALBUM, \
-    ENDPOINT_M7_PHOTO_ALBUM, M7_PHOTO_ALBUM_NAME
-from utility.utility_exceptions import UtilityError
+    ENDPOINT_M7_PHOTO_ALBUM, M7_PHOTO_ALBUM_NAME, ENDPOINT_M7_PHOTO_ALBUM_UPLOAD
+from utility_exceptions import UtilityError
 
 logger = logging.getLogger('endpoint_service')
 
@@ -111,8 +111,6 @@ class EndpointServices:
         try:
             logger.debug('Try to upload template by url: %s', url)
             headers = self._service_token.client_builder.headers
-            logger.debug('form_data %s', form_data)
-            logger.debug('type form_data %s', type(form_data))
 
             async with ClientSession() as client:
                 response = await client.post(
@@ -160,7 +158,65 @@ class EndpointServices:
                 album_id = await service_client.add(album_datat)
                 return album_id
 
-
         except Exception as ex:
             logger.exception('Error get_album_id_by_person_id: %s', ex)
+            raise
+
+    async def assign_person_id_to_album_id(self, person_id: str, album_id: str):
+        try:
+            m7_profile_album_url = await self.get_url(ENDPOINT_M7_PROFILE_ALBUM)
+            logger.debug('Try assign person_id to album_id by url: %s', m7_profile_album_url)
+            try:
+                async with self._service_token.create_client(
+                        endpoint=m7_profile_album_url,
+                        jsonrpc_codes={AlreadyExists.code: AlreadyExists}
+                ) as service_client:
+                    await service_client.assign(object_id=person_id, album_id=album_id)
+                    logger.debug('Successfully assigned')
+            except AlreadyExists:
+                return
+        except Exception as ex:
+            logger.exception('Error assign_person_id_to_album_id: %s', ex)
+            raise
+
+
+    async def upload_m7_photo_album(self,
+                                    file_bytes: bytes,
+                                    album_id: str,
+                                    file_name: str
+                                    ):
+        try:
+            m7_upload_photo_album_url = await self.get_url(ENDPOINT_M7_PHOTO_ALBUM_UPLOAD)
+            m7_upload_photo_album_url = '{}/{}'.format(m7_upload_photo_album_url,
+                                                       album_id)
+            logger.debug('Try upload file img by url: %s', m7_upload_photo_album_url)
+            form_data = FormData()
+            form_data.add_field(
+                'file',
+                file_bytes,
+                filename=file_name,
+                content_type='image/jpeg'
+            )
+            #form_data.add_field('upload_properties', json.dumps({'uploaded_by_utility': True}))
+
+            headers = self._service_token.client_builder.headers
+            async with ClientSession() as client:
+                response = await client.post(
+                    url=m7_upload_photo_album_url,
+                    data=form_data,
+                    headers=headers
+                )
+                resp_json_bytes = await response.content.read()
+                resp_json = json.loads(resp_json_bytes.decode())
+
+                if not resp_json.get('file_id'):
+                    raise UtilityError('Error upload m7_photo_album: %s', resp_json)
+
+                file_id = resp_json.get('file_id')
+
+                logger.debug('Successfully upload m7_photo_album service: %s', file_id)
+                return file_id
+
+        except Exception as ex:
+            logger.exception('Error upload_m7_photo_album: %s', ex)
             raise

@@ -168,6 +168,8 @@ class BiometryUploadBiometry:
                 name=last_name
             )
 
+            await self.endpoint_service.assign_person_id_to_album_id(person_id, album_id)
+
             person_data['m7_people']['person_id'] = person_id
             person_data['m7_people']['album_id'] = album_id
 
@@ -242,8 +244,10 @@ class BiometryUploadBiometry:
         try:
             full_path = '{}/{}'.format(source_biometry_folder, biometry_file_name)
             biometry_id = person_data['m7_people'][M7_BIOMETRY_ID]
+            album_id = person_data['m7_people']['album_id']
 
             file_bytes = self._get_file_image_bytes(full_path)
+
             biometry_type_id = self.config['utility_settings']['biometry_type_id']
             sdk_type = self._get_sdk_type_by_biometry_type_id(biometry_type_id)
 
@@ -311,6 +315,12 @@ class BiometryUploadBiometry:
             )
             self.total['new_bio_templates'] += 1
             logger.debug('Successfully upload files template and img')
+
+            await self.endpoint_service.upload_m7_photo_album(
+                file_bytes=file_bytes,
+                album_id=album_id,
+                file_name=biometry_file_name
+            )
 
         except Exception as ex:
             logger.exception('Error _upload_template: %s', ex)
