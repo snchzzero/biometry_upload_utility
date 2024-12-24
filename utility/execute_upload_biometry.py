@@ -125,6 +125,8 @@ class BiometryUploadBiometry:
             initial_person_data = person_data['m7_people']
             last_name = initial_person_data[M7_PEOPLE_LAST_NAME]
             first_name = initial_person_data.get(M7_PEOPLE_NAME)
+            patronymic = initial_person_data.get(M7_PEOPLE_PATRONYMIC)
+
 
             filter_m7_people = {
                 M7_PEOPLE_LAST_NAME: {
@@ -134,6 +136,10 @@ class BiometryUploadBiometry:
             if first_name:
                 filter_m7_people[M7_PEOPLE_NAME] = {
                     'values': [first_name]
+                }
+            if patronymic:
+                filter_m7_people[M7_PEOPLE_PATRONYMIC] = {
+                    'values': [patronymic]
                 }
 
 
@@ -149,6 +155,8 @@ class BiometryUploadBiometry:
                 }
                 if first_name:
                     m7_person_dict[M7_PEOPLE_NAME] = first_name
+                if patronymic:
+                    m7_person_dict[M7_PEOPLE_PATRONYMIC] = patronymic
 
                 person_id = await self.endpoint_service.add_data_m7_people(
                     service_url=m7_people_url,
@@ -336,9 +344,9 @@ class BiometryUploadBiometry:
 
             print('Finish executing upload_biometry')
             print(
-                'Info: added new people: {}, added new bio_templates: {}',
+                'Info: added new people: {}, added new bio_templates: {}'.format(
                 self.total['new_person'], self.total['new_bio_templates']
-            )
+            ))
             logger.debug('Finish executing upload_biometry')
             logger.debug(
                 'Info: added new people: %s, added new bio_templates: %s',
