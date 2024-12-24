@@ -1,15 +1,13 @@
 import asyncio
 
-
 from execute_upload_biometry import BiometryUploadBiometry
 
 if __name__ == '__main__':
+    utility = BiometryUploadBiometry()
     try:
-        print('hello')
-        utility = BiometryUploadBiometry()
         asyncio.run(utility.execute_upload_biometry())
-        print('main - done')
         asyncio.run(utility.stop_services())
-
     except Exception as ex:
-        print('Close main error: ', ex)
+        print('Biometry upload: Error: ', ex)
+    finally:
+        asyncio.run(utility.stop_services())

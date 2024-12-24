@@ -1,11 +1,9 @@
 {
   "utility_settings":
     {
-      "source_biometry_folder": "/home/evstafev/Изображения/biorecord",
+      "source_biometry_folder": "biorecord_photos",
       "biometry_type_id": "95b312bf0be942b19d69fdcb7cdfd6c6",
-      "biometry_url": "{}://biometry.{}/jsonrpc/biometry/v1",
-      "biometry_upload_url": "{}://biometry.{}/upload",
-      "stations_client_url": "{}://id-stations-client.{}/jsonrpc/stations-client"
+      "biometry_upload_url": "{}://biometry.{}/upload"
     },
   "logging": {
         "version": 1,
@@ -28,7 +26,11 @@
             "biometry_utility": {
                 "handlers": ["file"],
                 "level": "DEBUG"
-            }
+            },
+          "endpoint_service": {
+                "handlers": ["file"],
+                "level": "DEBUG"
+          }
         },
         "formatters": {
             "default": {
@@ -39,12 +41,5 @@
             "level": "ERROR",
             "handlers": ["console"]
         }
-    },
-  "m7": {
-    "protocol": "http",
-    "root_domain": "assadid-dev",
-    "endpoints": {
-      "people": "http://assadid-dev/people/jsonrpc/people"
     }
-  }
 }
