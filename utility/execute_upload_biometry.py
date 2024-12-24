@@ -162,8 +162,17 @@ class BiometryUploadBiometry:
                     service_url=m7_people_url,
                     m7_person_data=m7_person_dict)
                 self.total['new_person'] += 1
-                person_data['m7_people']['person_id'] = person_id
-            logger.debug('For %s got person_id: %s', person_full_name, person_id)
+
+            album_id = await self.endpoint_service.get_album_id_by_person_id(
+                person_id=person_id,
+                name=last_name
+            )
+
+            person_data['m7_people']['person_id'] = person_id
+            person_data['m7_people']['album_id'] = album_id
+
+            logger.debug('For %s got person_id: %s, album_id: %s',
+                         person_full_name, person_id, album_id)
         return people_data
 
 

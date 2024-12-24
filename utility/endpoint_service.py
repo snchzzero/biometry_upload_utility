@@ -5,10 +5,12 @@ from typing import List
 
 from aiohttp import ClientSession, FormData
 from m7_aiohttp.auth.service_token import AioHttpServiceToken
+from m7_aiohttp.exceptions import NotFound
 from m7_aiohttp.services.endpoints import AioHttpEndpointsPort
 
-from const import ENDPOINT_ID_STATIONS_CLIENT
-from utility_exceptions import UtilityError
+from const import ENDPOINT_ID_STATIONS_CLIENT, ENDPOINT_M7_PROFILE_ALBUM, \
+    ENDPOINT_M7_PHOTO_ALBUM, M7_PHOTO_ALBUM_NAME
+from utility.utility_exceptions import UtilityError
 
 logger = logging.getLogger('endpoint_service')
 
@@ -130,4 +132,35 @@ class EndpointServices:
                 return file_id
         except Exception as ex:
             logger.exception('Error upload_m7_biometry_service: %s', ex)
+            raise
+
+
+    async def get_album_id_by_person_id(self, person_id: str, name: str) -> str:
+        try:
+            m7_profile_album_url = await self.get_url(ENDPOINT_M7_PROFILE_ALBUM)
+            logger.debug('Try get album_id by url: %s', m7_profile_album_url)
+            try:
+                async with self._service_token.create_client(m7_profile_album_url) as service_client:
+                    result = await service_client.get([person_id])
+                    album_id = result.get(person_id)
+                    if not album_id:
+                        raise NotFound
+                    return album_id
+            except NotFound:
+                logger.debug('NotFound album_id, try to create new album')
+
+            m7_photo_album_url = await self.get_url(ENDPOINT_M7_PHOTO_ALBUM)
+            logger.debug('Try add photo-album by url: %s', m7_photo_album_url)
+
+            album_datat = {
+                M7_PHOTO_ALBUM_NAME: name
+            }
+
+            async with self._service_token.create_client(m7_photo_album_url) as service_client:
+                album_id = await service_client.add(album_datat)
+                return album_id
+
+
+        except Exception as ex:
+            logger.exception('Error get_album_id_by_person_id: %s', ex)
             raise
