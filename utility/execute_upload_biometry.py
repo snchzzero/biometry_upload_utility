@@ -1,5 +1,5 @@
 """Main function for execute upload biometry"""
-import base64
+
 from typing import List
 
 import json
@@ -12,7 +12,8 @@ from m7_aiohttp.services.endpoints import AioHttpEndpointsPort
 
 from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, \
     M7_PEOPLE_ID, M7_BIOMETRY_OWNER_ID, M7_BIOMETRY_TYPE_ID, M7_BIOMETRY_ID, \
-    M7_BIOMETRY_PROPERTIES, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK, ENDPOINT_M7_BIOMETRY
+    M7_BIOMETRY_PROPERTIES, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK, ENDPOINT_M7_BIOMETRY, M7_FILES_OBJECT_ID, \
+    M7_FILE_ATTRIBUTES, M7_FILE_ATTR_TEMPLATE_FILE_KIND, M7_FILE_DOWNLOAD_URL
 from endpoint_service import EndpointServices
 from init_utility import get_config, init_log
 from utility_exceptions import UtilityError
@@ -237,10 +238,44 @@ class BiometryUploadBiometry:
             raise UtilityError('Error _get_file_image_bytes: ', ex)
 
 
-    async def _upload_template(self,
-                               person_data: dict,
-                               biometry_file_name: str,
-                               source_biometry_folder: str):
+    async def _get_all_current_templates_by_biometry_id(self,
+                                                        biometry_id: str,
+                                                        sdk_type: str
+                                                        ) -> List[dict] or None:
+        m7_files_url = self.config['m7']['endpoints']['files']
+        templates_list = []
+
+        file_filter = {
+            M7_FILES_OBJECT_ID: {
+                'values': [biometry_id]
+            },
+            M7_FILE_ATTRIBUTES: {
+                M7_FILE_ATTR_TEMPLATE_FILE_KIND: {
+                    'values': ['image']
+                }
+            }
+        }
+        m7_files = await self.endpoint_service.get_list_by_filter_from_url(m7_files_url, file_filter)
+        if not m7_files:
+            return []
+
+        download_urls_image_files = [m7_file.get(M7_FILE_DOWNLOAD_URL) for m7_file in m7_files]
+        for url in download_urls_image_files:
+            file_bytes = await self.endpoint_service.get_file_bytes(url)
+            image_template = await self.endpoint_service.get_template_by_image(
+                sdk_type=sdk_type,
+                file_bytes=file_bytes
+            )
+            templates_list.append(image_template)
+
+        return templates_list
+
+
+
+    async def _create_template_by_file(self,
+                                       person_data: dict,
+                                       biometry_file_name: str,
+                                       source_biometry_folder: str):
         try:
             full_path = '{}/{}'.format(source_biometry_folder, biometry_file_name)
             biometry_id = person_data['m7_people'][M7_BIOMETRY_ID]
@@ -251,18 +286,27 @@ class BiometryUploadBiometry:
             biometry_type_id = self.config['utility_settings']['biometry_type_id']
             sdk_type = self._get_sdk_type_by_biometry_type_id(biometry_type_id)
 
-            image_buffer_data= {
-                'imageBuffer': {
-                    'imageBuffer': base64.b64encode(bytes(file_bytes)).decode('utf-8')
-
-                }
-
-            }
-
+            templates_list_for_check = []
             image_template = await self.endpoint_service.get_template_by_image(
                 sdk_type=sdk_type,
-                image_buffer=image_buffer_data
+                file_bytes=file_bytes
             )
+            templates_list_for_check.append(image_template)
+
+            all_current_templates = await self._get_all_current_templates_by_biometry_id(
+                biometry_id=biometry_id,
+                sdk_type=sdk_type
+            )
+
+            if all_current_templates:
+                templates_list_for_check.extend(all_current_templates)
+                check_biorecord_photos_config = \
+                    self.config['utility_settings']['check_biorecord_photos']
+                await self.endpoint_service.check_biorecord_photos(
+                    templates_list=templates_list_for_check,
+                    sdk_type=sdk_type,
+                    check_config=check_biorecord_photos_config
+                )
 
             face_quality = image_template['faceQuality']
             hash_template = image_template['hash']
@@ -322,25 +366,29 @@ class BiometryUploadBiometry:
                 file_name=biometry_file_name
             )
 
-        except Exception as ex:
-            logger.exception('Error _upload_template: %s', ex)
+        except Exception:
             raise
 
 
-    async def _create_update_templates_m7_biometry_service(self,
-                                                           source_biometry_folder: str,
-                                                           people_data: dict):
+    async def _create_templates_m7_biometry_service(self,
+                                                    source_biometry_folder: str,
+                                                    people_data: dict):
 
         for person_full_name, person_data in people_data.items():
-            try:
-                logger.debug('Create_update biometry templates for: %s', person_full_name)
-                biometry_files = person_data['files']
-                logger.debug('User image files: %s', biometry_files)
+            logger.debug('Create_update biometry templates for: %s', person_full_name)
+            biometry_files = person_data['files']
+            logger.debug('User image files: %s', biometry_files)
 
-                for biometry_file_name in biometry_files:
-                    await self._upload_template(person_data, biometry_file_name, source_biometry_folder)
-            except Exception as ex:
-                logger.exception('Error create/update template for: %s: %s', person_full_name, ex)
+            for biometry_file_name in biometry_files:
+                try:
+                    await self._create_template_by_file(
+                        person_data=person_data,
+                        biometry_file_name=biometry_file_name,
+                        source_biometry_folder=source_biometry_folder)
+                except Exception as ex:
+                    logger.exception(
+                        'Error create template for: %s: %s: %s',
+                        person_full_name, biometry_file_name, ex)
 
 
     async def execute_upload_biometry(self):
@@ -357,7 +405,7 @@ class BiometryUploadBiometry:
 
             people_data = await self._create_update_data_m7_people_service(people_data)
             people_data = await self._create_update_data_m7_biometry_service(people_data)
-            await self._create_update_templates_m7_biometry_service(
+            await self._create_templates_m7_biometry_service(
                 source_biometry_folder,
                 people_data)
 

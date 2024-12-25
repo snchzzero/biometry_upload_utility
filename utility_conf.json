@@ -3,7 +3,12 @@
     {
       "source_biometry_folder": "/home/algont/your_biometry_img_folder",
       "biometry_type_id": "95b312bf0be942b19d69fdcb7cdfd6c6",
-      "biometry_upload_url": "{}://biometry.{}/upload"
+      "biometry_upload_url": "{}://biometry.{}/upload",
+      "check_biorecord_photos": {
+        "mismatchImages": true,
+        "badImages": true,
+        "duplicateImages": true
+      }
     },
   "logging": {
         "version": 1,

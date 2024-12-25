@@ -1,4 +1,5 @@
 """Service for execute requests"""
+import base64
 import json
 import logging
 from typing import List
@@ -87,24 +88,31 @@ class EndpointServices:
                 biometry_id = await service_client.add(m7_biometry_data)
                 return biometry_id
         except Exception as ex:
-            raise UtilityError('Can''t add_data_m7_biometry: {}'.format(ex)) from ex
+            logger.exception('Can''t add_data_m7_biometry: %s', ex)
+            raise
 
 
-    async def get_template_by_image(self, image_buffer: dict, sdk_type: str):
+    async def get_template_by_image(self, file_bytes: bytes, sdk_type: str):
         try:
             stations_client_url = await self.get_url(ENDPOINT_ID_STATIONS_CLIENT)
             logger.debug('Try to get template by sdk: %s, by url: %s', sdk_type, stations_client_url)
-            #image_base64 = base64.b64encode(image_base64).decode('utf-8')
+
+            image_buffer_data = {
+                'imageBuffer': {
+                    'imageBuffer': base64.b64encode(bytes(file_bytes)).decode('utf-8')
+                }
+            }
 
             async with self._service_token.create_client(stations_client_url) as service_client:
                 template = await service_client.get_template_by_image(
                     sdk_type=sdk_type,
-                    image_buffer=image_buffer
+                    image_buffer=image_buffer_data
                 )
                 logger.debug('Successfully get_template_by_image')
                 return template
         except Exception as ex:
-            raise UtilityError('Can''t get_template_by_image: {}'.format(ex)) from ex
+            logger.exception('Can''t get_template_by_image: %s', ex)
+            raise
 
 
     async def upload_m7_biometry(self, url: str, form_data: FormData) -> str:
@@ -197,7 +205,6 @@ class EndpointServices:
                 filename=file_name,
                 content_type='image/jpeg'
             )
-            #form_data.add_field('upload_properties', json.dumps({'uploaded_by_utility': True}))
 
             headers = self._service_token.client_builder.headers
             async with ClientSession() as client:
@@ -219,4 +226,48 @@ class EndpointServices:
 
         except Exception as ex:
             logger.exception('Error upload_m7_photo_album: %s', ex)
+            raise
+
+
+    async def get_file_bytes(self, download_url: str) -> bytes:
+        """
+        Get file bytes from m7-files service
+        Args:
+            download_url: full url for download file
+        Returns:
+            bytes
+        """
+
+        async with self._service_token.create_client_session() as service_client:
+            response = await service_client.get(url=download_url)
+            file_bytes = await response.content.read()
+            return file_bytes
+
+
+    async def check_biorecord_photos(self,
+                                        templates_list: list,
+                                        sdk_type: str,
+                                        check_config: dict
+                                        ):
+        try:
+            stations_client_url = await self.get_url(ENDPOINT_ID_STATIONS_CLIENT)
+            logger.debug('Try to check_biorecord_photos by sdk: %s, by url: %s',
+                         sdk_type, stations_client_url)
+
+            async with self._service_token.create_client(stations_client_url) as service_client:
+                result = await service_client.check_biorecord_photos(
+                    sdk_type=sdk_type,
+                    photos=templates_list
+                )
+                logger.debug('Got result: %s', result)
+
+                if check_config['badImages'] and 0 in result['badImages']:
+                    raise UtilityError('IdBioxidBadQualityOfImage')
+                if check_config['mismatchImages'] and 0 in result['mismatchImages']:
+                    raise UtilityError('IdBioxidMismatchImage')
+                if check_config['duplicateImages'] and 0 in result['duplicateImages']:
+                    raise UtilityError('IdBioxidDuplicateImage')
+
+        except Exception as ex:
+            logger.exception('Error check_biorecord_photos: %s', ex)
             raise
