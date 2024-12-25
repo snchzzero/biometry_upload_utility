@@ -114,6 +114,7 @@ class BiometryUploadBiometry:
             else:
                 people_data[full_name] = m7_people
                 people_data[full_name]['files'] = [file_name]
+            people_data[full_name]['files'].sort()
         return people_data
 
 

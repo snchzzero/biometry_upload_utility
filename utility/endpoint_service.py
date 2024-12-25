@@ -228,8 +228,8 @@ class EndpointServices:
             logger.exception('Error upload_m7_photo_album: %s', ex)
             raise
 
-
-    async def get_file_bytes(self, download_url: str) -> bytes:
+    @staticmethod
+    async def get_file_bytes(download_url: str) -> bytes:
         """
         Get file bytes from m7-files service
         Args:
