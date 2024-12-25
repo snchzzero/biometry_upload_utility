@@ -12,7 +12,8 @@ from m7_aiohttp.services.endpoints import AioHttpEndpointsPort
 
 from const import M7_PEOPLE_NAME, M7_PEOPLE_LAST_NAME, M7_PEOPLE_PATRONYMIC, \
     M7_PEOPLE_ID, M7_BIOMETRY_OWNER_ID, M7_BIOMETRY_TYPE_ID, M7_BIOMETRY_ID, \
-    M7_BIOMETRY_PROPERTIES, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK, ENDPOINT_M7_BIOMETRY, M7_FILES_OBJECT_ID, \
+    M7_BIOMETRY_PROPERTIES, BIOMETRY_TYPE_ID_VISION_LABS_LUNA_SDK, \
+    ENDPOINT_M7_BIOMETRY, M7_FILES_OBJECT_ID, \
     M7_FILE_ATTRIBUTES, M7_FILE_ATTR_TEMPLATE_FILE_KIND, M7_FILE_DOWNLOAD_URL
 from endpoint_service import EndpointServices
 from init_utility import get_config, init_log
@@ -360,14 +361,31 @@ class BiometryUploadBiometry:
             self.total['new_bio_templates'] += 1
             logger.debug('Successfully upload files template and img')
 
-            await self.endpoint_service.upload_m7_photo_album(
+            await self.add_photo_to_photo_album(
                 file_bytes=file_bytes,
                 album_id=album_id,
                 file_name=biometry_file_name
             )
-
         except Exception:
             raise
+
+
+    async def add_photo_to_photo_album(self,
+                                       file_bytes: bytes,
+                                       album_id: str,
+                                       file_name: str
+                                       ):
+
+        result = await self.endpoint_service.get_photo_list_by_filter(album_id)
+        if result:
+            logger.debug('For album_id: %s already had any photos', album_id)
+            return
+
+        await self.endpoint_service.upload_m7_photo_album(
+            file_bytes=file_bytes,
+            album_id=album_id,
+            file_name=file_name
+        )
 
 
     async def _create_templates_m7_biometry_service(self,

@@ -10,7 +10,7 @@ from m7_aiohttp.exceptions import NotFound, AlreadyExists
 from m7_aiohttp.services.endpoints import AioHttpEndpointsPort
 
 from const import ENDPOINT_ID_STATIONS_CLIENT, ENDPOINT_M7_PROFILE_ALBUM, \
-    ENDPOINT_M7_PHOTO_ALBUM, M7_PHOTO_ALBUM_NAME, ENDPOINT_M7_PHOTO_ALBUM_UPLOAD
+    ENDPOINT_M7_PHOTO_ALBUM, M7_PHOTO_ALBUM_NAME, ENDPOINT_M7_PHOTO_ALBUM_UPLOAD, M7_PHOTO_ALBUM_ID
 from utility_exceptions import UtilityError
 
 logger = logging.getLogger('endpoint_service')
@@ -270,4 +270,26 @@ class EndpointServices:
 
         except Exception as ex:
             logger.exception('Error check_biorecord_photos: %s', ex)
+            raise
+
+
+    async def get_photo_list_by_filter(self, album_id: str):
+        try:
+            m7_photo_album_url = await self.get_url(ENDPOINT_M7_PHOTO_ALBUM)
+
+            filter_photo_album = {
+                M7_PHOTO_ALBUM_ID: {
+                    'values': [album_id]
+                }
+            }
+            async with self._service_token.create_client(m7_photo_album_url) as service_client:
+                return await service_client.get_photo_list_by_filter(
+                    filter=filter_photo_album,
+                    order=[],
+                    limit=100,
+                    offset=0
+                )
+
+        except Exception as ex:
+            logger.exception('Error get_photo_list_by_filter: %s', ex)
             raise

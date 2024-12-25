@@ -15,6 +15,7 @@ M7_BIOMETRY_FILES_FOLDER = 'files_folder'
 
 # Definition names fields from m7_photo_album service
 M7_PHOTO_ALBUM_NAME = "name"
+M7_PHOTO_ALBUM_ID = 'album_id'
 
 # Definition names fields from m7_files service
 M7_FILES_OBJECT_ID = 'object_id'
