@@ -237,11 +237,16 @@ class EndpointServices:
         Returns:
             bytes
         """
-
-        async with self._service_token.create_client_session() as service_client:
-            response = await service_client.get(url=download_url)
-            file_bytes = await response.content.read()
-            return file_bytes
+        try:
+            async with ClientSession() as client:
+                response = await client.get(
+                    url=download_url
+                )
+                file_bytes = await response.content.read()
+                return file_bytes
+        except Exception as ex:
+            logger.exception('Error get_file_bytes: ', ex)
+            raise
 
 
     async def check_biorecord_photos(self,
